@@ -222,7 +222,7 @@ void idle(void)
 	if(simulate)
 	{
 		sph->Animation();
-		simulate = !simulate;
+		// simulate = !simulate;
 	}
 
 	glutPostRedisplay();

@@ -14,19 +14,19 @@ using namespace std;
 
 SPH_cuda::SPH_cuda()
 {
-	kernel = 0.15f;
+	kernel = 0.02f;
 
 	Max_Number_Paticles = 50000;
 	total_time_steps = 0;
 	Number_Particles = 0;
-	
+
 	World_Size = m3Vector(1.f, 1.f, 1.f);
 
-	Cell_Size = 0.5;
-	Grid_Size = World_Size / Cell_Size;
-	Grid_Size.x = (int)Grid_Size.x;
-	Grid_Size.y = (int)Grid_Size.y;
-	Grid_Size.z = (int)Grid_Size.z;
+	Cell_Size = 0.02;
+	Grid_Size = m3Vector(GRID_SIZE, GRID_SIZE, GRID_SIZE);
+	// Grid_Size.x = (int)Grid_Size.x;
+	// Grid_Size.y = (int)Grid_Size.y;
+	// Grid_Size.z = (int)Grid_Size.z;
 
 	Number_Cells = (int)Grid_Size.x * (int)Grid_Size.y * (int)Grid_Size.z;
 
@@ -62,7 +62,7 @@ void SPH_cuda::init_particles(std::vector<m3Vector> positions, float Stand_Densi
 	/// Allocate host storagem
     pos = new m3Vector[Number_Particles]();
     vel = new m3Vector[Number_Particles]();
-   
+
     acc = new m3Vector[Number_Particles]();
     mass = new float[Number_Particles]();
 
@@ -82,18 +82,18 @@ void SPH_cuda::init_particles(std::vector<m3Vector> positions, float Stand_Densi
     checkCudaErrors(cudaMalloc((void**)&sortedPos_d, memSize));
     checkCudaErrors(cudaMalloc((void**)&vel_d, memSize));
     checkCudaErrors(cudaMalloc((void**)&sortedVel_d, memSize));
-    
+
     checkCudaErrors(cudaMalloc((void**)&acc_d, memSize));
     checkCudaErrors(cudaMalloc((void**)&sortedAcc_d, memSize));
 
     checkCudaErrors(cudaMalloc((void**)&mass_d, sizeof(m3Real)*Number_Particles));
     checkCudaErrors(cudaMalloc((void**)&sortedMass_d, sizeof(m3Real)*Number_Particles));
-    
+
     checkCudaErrors(cudaMalloc((void**)&dens_d, sizeof(m3Real)*Number_Particles));
     checkCudaErrors(cudaMalloc((void**)&sorted_dens_d, sizeof(m3Real)*Number_Particles));
     checkCudaErrors(cudaMalloc((void**)&pres_d, sizeof(m3Real)*Number_Particles));
     checkCudaErrors(cudaMalloc((void**)&sorted_pres_d, sizeof(m3Real)*Number_Particles));
-	
+
 
 	checkCudaErrors(cudaMemcpy(pos_d, pos, memSize, cudaMemcpyHostToDevice));
 	checkCudaErrors(cudaMemset(sortedPos_d, 0, memSize));
@@ -111,16 +111,16 @@ void SPH_cuda::init_particles(std::vector<m3Vector> positions, float Stand_Densi
 
     cout << "Initialized particles" << endl;
 }
-
+ 
 void SPH_cuda::Init_Fluid()
 {
 	vector<m3Vector> positions;
 
-	for(float k = World_Size.z * 0.3f; k < World_Size.z * 0.7f; k += kernel * 0.6f)
-	for(float j = World_Size.y * 0.3f; j < World_Size.y * 0.7f; j += kernel * 0.6f)
-	for(float i = World_Size.x * 0.3f; i < World_Size.x * 0.7f; i += kernel * 0.6f)
+	for(float k = World_Size.z * 0.3f; k < World_Size.z * 0.7f; k += 0.017f)
+	for(float j = World_Size.y * 0.3f; j < World_Size.y * 0.7f; j += 0.017f)
+	for(float i = World_Size.x * 0.3f; i < World_Size.x * 0.7f; i += 0.017f)
 			positions.push_back(m3Vector(i, j, k));
-	
+
 	Number_Particles = positions.size();
 
 	cout <<"Num particles: " <<Number_Particles<< endl;
@@ -139,7 +139,7 @@ void SPH_cuda::Init_Fluid()
 
 	checkCudaErrors(cudaMemset(dGridParticleHash, 0, Number_Particles*sizeof(uint)));
 	checkCudaErrors(cudaMemset(dGridParticleIndex, 0, Number_Particles*sizeof(uint)));
-	
+
 	checkCudaErrors(cudaMemset(dCellStart, 0, Number_Cells*sizeof(uint)));
 	checkCudaErrors(cudaMemset(dCellEnd, 0, Number_Cells*sizeof(uint)));
 }
@@ -160,8 +160,8 @@ void SPH_cuda::calcHash()
 /// Sorts the hashes and indices
 void SPH_cuda::sortParticles()
 {
-	thrust::sort_by_key(thrust::device_ptr<uint>(dGridParticleHash), 
-		thrust::device_ptr<uint>(dGridParticleHash + Number_Particles), 
+	thrust::sort_by_key(thrust::device_ptr<uint>(dGridParticleHash),
+		thrust::device_ptr<uint>(dGridParticleHash + Number_Particles),
 		thrust::device_ptr<uint>(dGridParticleIndex));
 
 	cudaDeviceSynchronize();
@@ -173,12 +173,11 @@ void SPH_cuda::reorderDataAndFindCellStart()
 {
 	uint numThreads, numBlocks;
 	computeGridSize(Number_Particles, 256, numBlocks, numThreads);
-
 	// set all cells to empty
 	checkCudaErrors(cudaMemset(dCellStart, 0, Number_Cells*sizeof(uint)));
 
 	uint smemSize = sizeof(uint)*(numThreads+1);
-	reorderDataAndFindCellStartD<<< numBlocks, numThreads, smemSize>>>(	
+	reorderDataAndFindCellStartD<<< numBlocks, numThreads, smemSize>>>(
 		sortedPos_d, pos_d,
 		sortedVel_d, vel_d,
 		sortedAcc_d, acc_d,
@@ -196,7 +195,7 @@ void SPH_cuda::Compute_Density_SingPressure()
 	uint numThreads, numBlocks;
 	computeGridSize(Number_Particles, 256, numBlocks, numThreads);
 
-	Compute_Density_SingPressureD<<<numBlocks, numThreads>>>(	
+	Compute_Density_SingPressureD<<<numBlocks, numThreads>>>(
 	sortedPos_d,
 	sorted_dens_d,
 	sorted_pres_d,
@@ -211,16 +210,16 @@ void SPH_cuda::Compute_Force()
 {
 	uint numThreads, numBlocks;
 	computeGridSize(Number_Particles, 256, numBlocks, numThreads);
-
-	Compute_ForceD<<<numBlocks, numThreads>>>(	
+ 
+	Compute_ForceD<<<numBlocks, numThreads>>>(
 	pos_d, sortedPos_d,
 	vel_d, sortedVel_d,
 	acc_d, sortedAcc_d,
 	mass_d, sortedMass_d,
 	dens_d, sorted_dens_d,
 	pres_d, sorted_pres_d,
-	dGridParticleIndex, dCellStart, dCellEnd, Number_Particles, Number_Cells, Cell_Size, Grid_Size, Spiky_constant, B_spline_constant, Time_Delta, kernel, Gravity, mu);
-
+	dGridParticleIndex, dCellStart, dCellEnd, Number_Particles, Number_Cells, Cell_Size, Grid_Size, Spiky_constant, B_spline_constant, Time_Delta, kernel, Gravity, mu, World_Size, Wall_Hit);
+ 
 	cudaDeviceSynchronize();
 	getLastCudaError("Kernel execution failed: Compute_ForceD");
 }
@@ -230,7 +229,7 @@ void SPH_cuda::Update_Properties()
 	uint numThreads, numBlocks;
 	computeGridSize(Number_Particles, 256, numBlocks, numThreads);
 
-	Update_PropertiesD<<<numBlocks, numThreads>>>(	
+	Update_PropertiesD<<<numBlocks, numThreads>>>(
 		pos_d,
 		vel_d,
 		acc_d,
@@ -244,33 +243,61 @@ void SPH_cuda::compute_SPH_cuda()
 {
 	calcHash();
 
+	// checkCudaErrors(cudaMemcpy(hGridParticleHash, dGridParticleHash, sizeof(uint)*Number_Particles, cudaMemcpyDeviceToHost));
+	// checkCudaErrors(cudaMemcpy(hGridParticleIndex, dGridParticleIndex, sizeof(uint)*Number_Particles, cudaMemcpyDeviceToHost));
+	// checkCudaErrors(cudaMemcpy(hCellStart, dCellStart, sizeof(uint)*Number_Cells, cudaMemcpyDeviceToHost));
+	// checkCudaErrors(cudaMemcpy(hCellEnd, dCellEnd, sizeof(uint)*Number_Cells, cudaMemcpyDeviceToHost));
+
+	// checkCudaErrors(cudaMemcpy(pos, pos_d, sizeof(m3Vector) * Number_Particles, cudaMemcpyDeviceToHost));
+
+	// for(int i = 0; i<Number_Particles; i++)
+	// {
+	// 	cout << "index: " << i << " pos " << pos[i].x << " "<<pos[i].y << " " << pos[i].z << endl;
+	// }
+
+	// for(int i = 0; i<Number_Particles; i++)
+	// {
+	// 	cout << "index: " << i << " hgph " << hGridParticleHash[i] << " hgpi " << hGridParticleIndex[i] << endl;
+	// }
+
+	// for(int i = 0; i<Number_Cells; i++)
+	// {
+	// 	cout << "index: " << i << " hcs: " << hCellStart[i] << " hce: " << hCellEnd[i] << endl;
+	// }
+
+	// cout << endl<< endl;
+
 	sortParticles();
 
 	reorderDataAndFindCellStart();
 
-	checkCudaErrors(cudaMemcpy(hGridParticleHash, dGridParticleHash, sizeof(uint)*Number_Particles, cudaMemcpyDeviceToHost));
-	checkCudaErrors(cudaMemcpy(hGridParticleIndex, dGridParticleIndex, sizeof(uint)*Number_Particles, cudaMemcpyDeviceToHost));
-	checkCudaErrors(cudaMemcpy(hCellStart, dCellStart, sizeof(uint)*Number_Cells, cudaMemcpyDeviceToHost));
-	checkCudaErrors(cudaMemcpy(hCellEnd, dCellEnd, sizeof(uint)*Number_Cells, cudaMemcpyDeviceToHost));
+	// checkCudaErrors(cudaMemcpy(hGridParticleHash, dGridParticleHash, sizeof(uint)*Number_Particles, cudaMemcpyDeviceToHost));
+	// checkCudaErrors(cudaMemcpy(hGridParticleIndex, dGridParticleIndex, sizeof(uint)*Number_Particles, cudaMemcpyDeviceToHost));
+	// checkCudaErrors(cudaMemcpy(hCellStart, dCellStart, sizeof(uint)*Number_Cells, cudaMemcpyDeviceToHost));
+	// checkCudaErrors(cudaMemcpy(hCellEnd, dCellEnd, sizeof(uint)*Number_Cells, cudaMemcpyDeviceToHost));
 
-	for(int i = 0; i<Number_Particles; i++)
-	{
-		cout << "index: " << i << " hgph " << hGridParticleHash[i] << " hgpi " << hGridParticleIndex[i] << endl;
-	}
+	// for(int i = 0; i<Number_Particles; i++)
+	// {
+	// 	cout << "index: " << i << " hgph " << hGridParticleHash[i] << " hgpi " << hGridParticleIndex[i] << endl;
+	// }
 
-	for(int i = 0; i<Number_Cells; i++)
-	{
-		cout << "index: " << i << " hcs: " << hCellStart[i] << " hce: " << hCellEnd[i] << endl;
-	}
+	// for(int i = 0; i<Number_Cells; i++)
+	// {
+	// 	cout << "index: " << i << " hcs: " << hCellStart[i] << " hce: " << hCellEnd[i] << endl;
+	// }
 
-	// Compute_Density_SingPressure();
+	Compute_Density_SingPressure();
 
-	// Compute_Force();
+	Compute_Force();
 
 	// Update_Properties();
 
-	// checkCudaErrors(cudaMemcpy(pos, pos_d, sizeof(m3Vector) * Number_Particles, cudaMemcpyDeviceToHost));
-	// checkCudaErrors(cudaMemcpy(vel, vel_d, sizeof(m3Vector) * Number_Particles, cudaMemcpyDeviceToHost));
+	checkCudaErrors(cudaMemcpy(pos, pos_d, sizeof(m3Vector) * Number_Particles, cudaMemcpyDeviceToHost)); 
+
+	// for(int i = 0; i<Number_Particles; i++)
+	// {
+	// 	cout << "index: " << i << " pos " << pos[i].x << " "<<pos[i].y << " " << pos[i].z << endl;
+	// }
 }
 
 void SPH_cuda::Animation()

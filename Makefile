@@ -1,4 +1,4 @@
-CFLAGS = -std=c++11 -O3 -Xcompiler -ansi -Xcompiler -Ofast -Xcompiler -std=c++11 -Wno-deprecated-gpu-targets
+CFLAGS = -std=c++11 -Xcompiler -ansi -Xcompiler -Ofast -Xcompiler -std=c++11 -Wno-deprecated-gpu-targets
 LDFLAGS = -lGL -lglut -lGLU
 OUTF = build/
 MKDIR_P = mkdir -p

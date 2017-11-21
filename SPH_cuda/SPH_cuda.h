@@ -28,6 +28,8 @@ This class implements the SPH [5] and SM [2] algorithms with the needed modifica
 #define PI 3.141592f
 #define INF 1E-12f
 
+#define GRID_SIZE	64
+
 typedef std::chrono::system_clock::time_point 	tpoint;
 typedef std::chrono::duration<double> 			duration_d;
 
@@ -125,7 +127,7 @@ class SPH_cuda
 		void computeGridSize(uint n, uint blockSize, uint &numBlocks, uint &numThreads)
 		{
 			numThreads = min(blockSize, n);
-			numBlocks = iDivUp(n, numThreads);
+			numBlocks = (n + numThreads - 1) / numThreads;
 		}
 };
 

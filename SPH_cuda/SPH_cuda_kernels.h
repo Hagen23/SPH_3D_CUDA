@@ -13,6 +13,7 @@
 #include <chrono>
 
 #include <helper_cuda.h>
+#include <helper_math.h>
 
 #define PI 3.141592f
 #define INF 1E-12f
@@ -48,19 +49,68 @@ __device__ float Visco(m3Real Spiky_constant, float r, m3Real kernel)
 __device__ m3Vector Calculate_Cell_Position(m3Vector pos, m3Real Cell_Size)
 {
 	m3Vector cellpos = pos / Cell_Size;
-	cellpos.x = (int)cellpos.x;
-	cellpos.y = (int)cellpos.y;
-	cellpos.z = (int)cellpos.z;
+	cellpos.x = floor(cellpos.x);
+	cellpos.y = floor(cellpos.y);
+	cellpos.z = floor(cellpos.z);
 	return cellpos;
 }
 
 __device__ int Calculate_Cell_Hash(m3Vector pos, m3Vector Grid_Size)
 {
-	if((pos.x < 0)||(pos.x >= Grid_Size.x)||(pos.y < 0)||(pos.y >= Grid_Size.y)||
-	(pos.z < 0)||(pos.z >= Grid_Size.z))
-		return -1;
+	// if((pos.x < 0)||(pos.x >= Grid_Size.x)||(pos.y < 0)||(pos.y >= Grid_Size.y)||
+	// (pos.z < 0)||(pos.z >= Grid_Size.z))
+	// 	return -1;
 
-	return  pos.x + Grid_Size.x * (pos.y + Grid_Size.y * pos.z);;
+	int x = (int)pos.x & (int)((Grid_Size.x-1));  // wrap grid, assumes size is power of 2
+    int y = (int)pos.y & (int)((Grid_Size.y-1));
+    int z = (int)pos.z & (int)((Grid_Size.z-1));
+
+	return  x + (int)Grid_Size.x * (y + (int)Grid_Size.y * z);
+}
+
+__device__ void Update_Properties(
+	int index,
+	m3Vector *pos_d,
+	m3Vector *vel_d,
+	m3Vector *acc_d,
+	m3Vector World_Size, m3Real Time_Delta, int Number_Particles, m3Real Wall_Hit)
+{
+	if(index < Number_Particles)
+	{
+		vel_d[index] = vel_d[index] + (acc_d[index]*Time_Delta);
+		pos_d[index] = pos_d[index] + (vel_d[index]*Time_Delta);
+		
+		if(pos_d[index].x < 0.0f)
+		{
+			vel_d[index].x = vel_d[index].x * Wall_Hit;
+			pos_d[index].x = 0.0f;
+		}
+		if(pos_d[index].x >= World_Size.x)
+		{
+			vel_d[index].x = vel_d[index].x * Wall_Hit;
+			pos_d[index].x = World_Size.x - 0.0001f;
+		}
+		if(pos_d[index].y < 0.0f)
+		{
+			vel_d[index].y = vel_d[index].y * Wall_Hit;
+			pos_d[index].y = 0.0f;
+		}
+		if(pos_d[index].y >= World_Size.y)
+		{
+			vel_d[index].y = vel_d[index].y * Wall_Hit;
+			pos_d[index].y = World_Size.y - 0.0001f;
+		}
+		if(pos_d[index].z < 0.0f)
+		{
+			vel_d[index].z = vel_d[index].z * Wall_Hit;
+			pos_d[index].z = 0.0f;
+		}
+		if(pos_d[index].z >= World_Size.z)
+		{
+			vel_d[index].z = vel_d[index].z * Wall_Hit;
+			pos_d[index].z = World_Size.z - 0.0001f;
+		}
+	}
 }
 
 __global__
@@ -151,17 +201,20 @@ __global__ void Compute_Density_SingPressureD(
 	m3Real *sortedMass_d,
 	uint *m_dGridParticleIndex, uint *m_dCellStart, uint *m_dCellEnd, int m_numParticles, int m_numGridCells, m3Real Cell_Size, m3Vector Grid_Size, m3Real Poly6_constant, m3Real kernel, m3Real K, m3Real Stand_Density)
 {
-	uint index = blockIdx.x * blockDim.x + threadIdx.x;
+	uint id = blockIdx.x * blockDim.x + threadIdx.x;
+	uint stride = blockDim.x * gridDim.x;
 
 	m3Vector CellPos, NeighborPos;
 	int hash;
 
-	if(index < m_numParticles)
+	for(int index = id; index< m_numParticles; index+= stride)
 	{
 		sorted_dens_d[index] = 0.f;
 		sorted_pres_d[index] = 0.f;
 		
 		CellPos = Calculate_Cell_Position(sortedPos_d[index], Cell_Size);
+
+		float partial_dens = sorted_dens_d[index];
 
 		for(int k = -1; k <= 1; k++)
 		for(int j = -1; j <= 1; j++)
@@ -171,10 +224,13 @@ __global__ void Compute_Density_SingPressureD(
 			hash = Calculate_Cell_Hash(NeighborPos, Grid_Size);
 			
 			uint startIndex = m_dCellStart[hash];
+			uint endIndex = m_dCellEnd[hash];
 
-			if (startIndex != 0xffffffff)
+			if (startIndex != 0xffffffff && startIndex != endIndex)
 			{
-				uint endIndex = m_dCellEnd[hash];
+				// uint endIndex = m_dCellEnd[hash];
+
+				// printf("start_index %d end_index %d \n", index, startIndex, endIndex);
 
 				for(uint j = startIndex; j < endIndex; j++)
 				{
@@ -183,15 +239,17 @@ __global__ void Compute_Density_SingPressureD(
 						m3Vector Distance;
 						Distance = sortedPos_d[index] - sortedPos_d[j];
 						
-						m3Real dis2 = Distance.x * Distance.x + Distance.y * Distance.y + Distance.z * Distance.z;
-						printf("j %d sortedMass j %f\n", j, sortedMass_d[j]);
-						sorted_dens_d[index] += sortedMass_d[j]; // * Poly6(Poly6_constant, dis2, kernel);
+						m3Real dis2 = Distance.magnitudeSquared();
+						// Distance.x * Distance.x + Distance.y * Distance.y + Distance.z * Distance.z;
+						// // printf("j %d sortedMass j %f\n", j, sortedMass_d[j]);
+						partial_dens += sortedMass_d[j] * Poly6(Poly6_constant, dis2, kernel);
 					}
 				}
 			}
 		}
 
-		// sorted_pres_d[index] = K * (sorted_dens_d[index]  - Stand_Density);
+		// sorted_dens_d[index] = partial_dens;
+		sorted_pres_d[index] = K * (sorted_dens_d[index] - Stand_Density);
 	}
 }
 
@@ -202,18 +260,19 @@ __global__ void Compute_ForceD(
 	m3Real *mass_d, m3Real *sortedMass_d,
 	m3Real *dens_d, m3Real *sorted_dens_d,
 	m3Real *pres_d, m3Real *sorted_pres_d,
-	uint *m_dGridParticleIndex, uint *m_dCellStart, uint *m_dCellEnd, int m_numParticles, int m_numGridCells, m3Real Cell_Size, m3Vector Grid_Size, m3Real Spiky_constant, m3Real B_spline_constant, m3Real Time_Delta, m3Real kernel, m3Vector Gravity, m3Real mu)
+	uint *m_dGridParticleIndex, uint *m_dCellStart, uint *m_dCellEnd, int m_numParticles, int m_numGridCells, m3Real Cell_Size, m3Vector Grid_Size, m3Real Spiky_constant, m3Real B_spline_constant, m3Real Time_Delta, m3Real kernel, m3Vector Gravity, m3Real mu, m3Vector World_Size, m3Real Wall_Hit)
 {
-	uint index = blockIdx.x * blockDim.x + threadIdx.x;
+	uint id = blockIdx.x * blockDim.x + threadIdx.x;
+	uint stride = blockDim.x * gridDim.x;
 
 	m3Vector CellPos;
 	m3Vector NeighborPos;
 	int hash;
 
-	if(index < m_numParticles)
+	for(int index = id; index< m_numParticles; index+= stride)
 	{
 		// printf("sorted dens %d -- %f \n", index, sorted_pres_d[index]);
-		// sortedAcc_d[index] = m3Vector(0.0f, 0.0f, 0.0f);
+		sortedAcc_d[index] = m3Vector(0.0f, 0.0f, 0.0f);
 
 		// CellPos = Calculate_Cell_Position(sortedPos_d[index], Cell_Size);
 
@@ -263,18 +322,20 @@ __global__ void Compute_ForceD(
 
 		// sortedAcc_d[index] = sortedAcc_d[index] / sorted_dens_d[index];
 
-		// sortedAcc_d[index] += Gravity;
+		sortedAcc_d[index] += Gravity;
 
-		// uint originalIndex = m_dGridParticleIndex[index];
+		Update_Properties(index, sortedPos_d, sortedVel_d, sortedAcc_d, World_Size, Time_Delta, m_numParticles, Wall_Hit);
 
-		// pos_d[originalIndex] = sortedPos_d[index];
-		// vel_d[originalIndex] = sortedVel_d[index];
+		uint originalIndex = m_dGridParticleIndex[index];
+
+		pos_d[originalIndex] = sortedPos_d[index];
+		vel_d[originalIndex] = sortedVel_d[index];
 		
-		// acc_d[originalIndex] = sortedAcc_d[index];
-		// mass_d[originalIndex] = sortedMass_d[index];
+		acc_d[originalIndex] = sortedAcc_d[index];
+		mass_d[originalIndex] = sortedMass_d[index];
 		
-		// dens_d[originalIndex] = sorted_dens_d[index];
-		// pres_d[originalIndex] = sorted_pres_d[index];
+		dens_d[originalIndex] = sorted_dens_d[index];
+		pres_d[originalIndex] = sorted_pres_d[index];
 	}
 }
 
