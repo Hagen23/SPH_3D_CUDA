@@ -40,27 +40,26 @@ class SPH_cuda
 		/// Host data
 		m3Vector 	*pos;			// Position of the particle
 		m3Vector 	*vel;			// Velocity of the particle
-		m3Vector 	*acc;			// Acceleration of the particle
-		float		*mass;
-
-		float 		*dens;			// density
-		float 		*pres;			// pressure
+		// m3Vector 	*acc;			// Acceleration of the particle
+		m3Real		*mass;
+		// m3Real 		*dens;			// density
+		// m3Real 		*pres;			// pressure
 
 		/// GPU Data
 		m3Vector	*pos_d, *sortedPos_d;
 		m3Vector 	*vel_d, *sortedVel_d;					// Velocity of the particle
 		
-		m3Vector 	*acc_d, *sortedAcc_d;					// Acceleration of the particle
-		m3Real		*mass_d, *sortedMass_d;
+		m3Vector 	*acc_d; // *sortedAcc_d;					// Acceleration of the particle
+		m3Real		*mass_d; // *sortedMass_d;
 
-		m3Real 		*dens_d, *sorted_dens_d;			// density
-		m3Real 		*pres_d, *sorted_pres_d;			// pressure
+		m3Real 		*dens_d; // *sorted_dens_d;			// density
+		m3Real 		*pres_d; // *sorted_pres_d;			// pressure
 
 		// host grid data for sorting method
-        uint  *hGridParticleHash; 		// grid hash value for each particle
-        uint  *hGridParticleIndex;		// particle index for each particle
-        uint  *hCellStart;        		// index of start of each cell in sorted list
-        uint  *hCellEnd;          		// index of end of cell
+        // uint  *hGridParticleHash; 		// grid hash value for each particle
+        // uint  *hGridParticleIndex;		// particle index for each particle
+        // uint  *hCellStart;        		// index of start of each cell in sorted list
+        // uint  *hCellEnd;          		// index of end of cell
 
 		// grid data for sorting method
         uint  *dGridParticleHash; 		// grid hash value for each particle

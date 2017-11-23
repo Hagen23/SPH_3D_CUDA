@@ -22,10 +22,12 @@
 __device__ m3Real Poly6(m3Real Poly6_constant, m3Real r2, m3Real kernel)
 {
 	m3Real pow_value = kernel * kernel - r2;
+	// float constant = pow_value / fabs(pow_value);
 	if(r2 >= 0 && r2 <= kernel*kernel)
 		return Poly6_constant * pow_value * pow_value * pow_value;
 	else 
 		return 0.0f;
+	// return Poly6_constant * pow_value * pow_value * pow_value; //pow_value * (constant + 1) *0.5;
 }
 
 /// For force of pressure computation
@@ -69,11 +71,14 @@ __device__ int Calculate_Cell_Hash(m3Vector pos, m3Vector Grid_Size)
 }
 
 __device__ void Update_Properties(
-	int index,
-	m3Vector *pos_d,
-	m3Vector *vel_d,
-	m3Vector *acc_d,
-	m3Vector World_Size, m3Real Time_Delta, int Number_Particles, m3Real Wall_Hit)
+	int 		index,
+	m3Vector 	*pos_d,
+	m3Vector 	*vel_d,
+	m3Vector 	*acc_d,
+	m3Vector 	World_Size, 
+	m3Real 		Time_Delta, 
+	int 		Number_Particles, 
+	m3Real 		Wall_Hit)
 {
 	if(index < Number_Particles)
 	{
@@ -128,13 +133,15 @@ void calcHashD(uint *gridParticleHash, uint * gridParticleIndex, m3Vector *pos, 
 
 __global__ 
 void reorderDataAndFindCellStartD(
-	m3Vector *sortedPos_d, m3Vector *pos_d,
-	m3Vector *sortedVel_d, m3Vector *vel_d,	
-	m3Vector *sortedAcc_d, m3Vector *acc_d,	
-	m3Real *sortedMass_d, m3Real *mass_d,	
-	m3Real *sorted_dens_d, m3Real *dens_d,
-	m3Real *sorted_pres_d, m3Real *pres_d,	
-	uint *cellStart, uint *cellEnd, uint *gridParticleHash, uint *gridParticleIndex, uint numParticles)
+	m3Vector 	*sortedPos_d,
+	m3Vector 	*pos_d,
+	m3Vector 	*sortedVel_d, 
+	m3Vector 	*vel_d,	
+	uint 		*cellStart,
+	uint 		*cellEnd, 
+	uint 		*gridParticleHash, 
+	uint 		*gridParticleIndex, 
+	uint 		numParticles)
 {
 	extern __shared__ uint sharedHash[];    // blockSize + 1 elements
     uint index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -187,19 +194,29 @@ void reorderDataAndFindCellStartD(
         
 		sortedPos_d[index] = pos_d[sortedIndex];
 		sortedVel_d[index] = vel_d[sortedIndex];		
-		sortedAcc_d[index] = acc_d[sortedIndex];
-		sortedMass_d[index] = mass_d[sortedIndex];		
-		sorted_dens_d[index] = dens_d[sortedIndex];
-		sorted_pres_d[index] = pres_d[sortedIndex];
+		// sortedAcc_d[index] = acc_d[sortedIndex];
+		// sortedMass_d[index] = mass_d[sortedIndex];		
+		// sorted_dens_d[index] = dens_d[sortedIndex];
+		// sorted_pres_d[index] = pres_d[sortedIndex];
 	}
 }
 
 __global__ void Compute_Density_SingPressureD(
-	m3Vector *sortedPos_d,
-	m3Real *sorted_dens_d,
-	m3Real *sorted_pres_d,
-	m3Real *sortedMass_d,
-	uint *m_dGridParticleIndex, uint *m_dCellStart, uint *m_dCellEnd, int m_numParticles, int m_numGridCells, m3Real Cell_Size, m3Vector Grid_Size, m3Real Poly6_constant, m3Real kernel, m3Real K, m3Real Stand_Density)
+	m3Vector 	*sortedPos_d,
+	m3Real 		*dens_d,
+	m3Real 		*pres_d,
+	m3Real 		*mass_d,
+	uint 		*m_dGridParticleIndex, 
+	uint 		*m_dCellStart, 
+	uint 		*m_dCellEnd, 
+	int 		m_numParticles, 
+	int 		m_numGridCells, 
+	m3Real		Cell_Size, 
+	m3Vector 	Grid_Size, 
+	m3Real 		Poly6_constant, 
+	m3Real 		kernel,
+	m3Real 		K, 
+	m3Real 		Stand_Density)
 {
 	uint id = blockIdx.x * blockDim.x + threadIdx.x;
 	uint stride = blockDim.x * gridDim.x;
@@ -209,12 +226,12 @@ __global__ void Compute_Density_SingPressureD(
 
 	for(int index = id; index< m_numParticles; index+= stride)
 	{
-		sorted_dens_d[index] = 0.f;
-		sorted_pres_d[index] = 0.f;
+		dens_d[index] = 0.f;
+		pres_d[index] = 0.f;
 		
 		CellPos = Calculate_Cell_Position(sortedPos_d[index], Cell_Size);
 
-		float partial_dens = sorted_dens_d[index];
+		float partial_dens = 0.0f;
 
 		for(int k = -1; k <= 1; k++)
 		for(int j = -1; j <= 1; j++)
@@ -242,25 +259,41 @@ __global__ void Compute_Density_SingPressureD(
 						m3Real dis2 = Distance.magnitudeSquared();
 						// Distance.x * Distance.x + Distance.y * Distance.y + Distance.z * Distance.z;
 						// // printf("j %d sortedMass j %f\n", j, sortedMass_d[j]);
-						partial_dens += sortedMass_d[j] * Poly6(Poly6_constant, dis2, kernel);
+						partial_dens += mass_d[j] * Poly6(Poly6_constant, dis2, kernel);
 					}
 				}
 			}
 		}
 
-		// sorted_dens_d[index] = partial_dens;
-		sorted_pres_d[index] = K * (sorted_dens_d[index] - Stand_Density);
+		dens_d[index] = partial_dens;
+		pres_d[index] = K * (partial_dens - Stand_Density);
 	}
 }
 
 __global__ void Compute_ForceD(
-	m3Vector *pos_d, m3Vector *sortedPos_d,
-	m3Vector *vel_d, m3Vector *sortedVel_d,
-	m3Vector *acc_d, m3Vector *sortedAcc_d,
-	m3Real *mass_d, m3Real *sortedMass_d,
-	m3Real *dens_d, m3Real *sorted_dens_d,
-	m3Real *pres_d, m3Real *sorted_pres_d,
-	uint *m_dGridParticleIndex, uint *m_dCellStart, uint *m_dCellEnd, int m_numParticles, int m_numGridCells, m3Real Cell_Size, m3Vector Grid_Size, m3Real Spiky_constant, m3Real B_spline_constant, m3Real Time_Delta, m3Real kernel, m3Vector Gravity, m3Real mu, m3Vector World_Size, m3Real Wall_Hit)
+	m3Vector 	*pos_d, 
+	m3Vector 	*sortedPos_d,
+	m3Vector 	*vel_d, 
+	m3Vector 	*sortedVel_d,
+	m3Vector 	*acc_d,
+	m3Real 		*mass_d,
+	m3Real 		*dens_d,
+	m3Real 		*pres_d, 
+	uint 		*m_dGridParticleIndex, 
+	uint 		*m_dCellStart, 
+	uint 		*m_dCellEnd, 
+	int 		m_numParticles, 
+	int 		m_numGridCells, 
+	m3Real 		Cell_Size, 
+	m3Vector 	Grid_Size, 
+	m3Real 		Spiky_constant, 
+	m3Real 		B_spline_constant, 
+	m3Real 		Time_Delta, 
+	m3Real 		kernel, 
+	m3Vector 	Gravity, 
+	m3Real 		mu, 
+	m3Vector 	World_Size, 
+	m3Real 		Wall_Hit)
 {
 	uint id = blockIdx.x * blockDim.x + threadIdx.x;
 	uint stride = blockDim.x * gridDim.x;
@@ -272,70 +305,64 @@ __global__ void Compute_ForceD(
 	for(int index = id; index< m_numParticles; index+= stride)
 	{
 		// printf("sorted dens %d -- %f \n", index, sorted_pres_d[index]);
-		sortedAcc_d[index] = m3Vector(0.0f, 0.0f, 0.0f);
+		acc_d[index] = m3Vector(0.0f, 0.0f, 0.0f);
 
-		// CellPos = Calculate_Cell_Position(sortedPos_d[index], Cell_Size);
+		CellPos = Calculate_Cell_Position(sortedPos_d[index], Cell_Size);
 
-		// for(int k = -1; k <= 1; k++)
-		// for(int j = -1; j <= 1; j++)
-		// for(int i = -1; i <= 1; i++)
-		// {
-		// 	NeighborPos = CellPos + m3Vector(i, j, k);
-		// 	hash = Calculate_Cell_Hash(NeighborPos, Grid_Size);
+		for(int k = -1; k <= 1; k++)
+		for(int j = -1; j <= 1; j++)
+		for(int i = -1; i <= 1; i++)
+		{
+			NeighborPos = CellPos + m3Vector(i, j, k);
+			hash = Calculate_Cell_Hash(NeighborPos, Grid_Size);
 
-		// 	uint startIndex = m_dCellStart[hash];
+			uint startIndex = m_dCellStart[hash];
 
-		// 	if (startIndex != 0xffffffff)
-		// 	{
-		// 		uint endIndex = m_dCellEnd[hash];
+			if (startIndex != 0xffffffff)
+			{
+				uint endIndex = m_dCellEnd[hash];
 
-		// 		for(uint j = startIndex; j < endIndex; j++)
-		// 		{
-		// 			if(j != index)
-		// 			{
-		// 				m3Vector Distance;
-		// 				Distance = sortedPos_d[index] - sortedPos_d[j];
-		// 				float dis2 = (float)Distance.magnitudeSquared();
+				for(uint j = startIndex; j < endIndex; j++)
+				{
+					if(j != index)
+					{
+						m3Vector Distance;
+						Distance = sortedPos_d[index] - sortedPos_d[j];
+						float dis2 = (float)Distance.magnitudeSquared();
 
-		// 				if(dis2 > INF)
-		// 				{
-		// 					float dis = sqrt(dis2);
+						// if(dis2 > INF)
+						// {
+							float dis = sqrt(dis2);
 
-		// 					/// Calculates the force of pressure, Eq.10
-		// 					float Volume = sortedMass_d[j] / sorted_dens_d[j];
-		// 					// float Force_pressure = Volume * (p->pres+np->pres)/2 * B_spline_1(dis);
+							/// Calculates the force of pressure, Eq.10
+							float Volume = mass_d[j] / dens_d[j];
+							// float Force_pressure = Volume * (p->pres+np->pres)/2 * B_spline_1(dis);
 
-		// 					float Force_pressure = Volume * (sorted_pres_d[index] + sorted_pres_d[j])/2 * Spiky(Spiky_constant, dis, kernel);
+							float Force_pressure = Volume * (pres_d[index] + pres_d[j])/2 * Spiky(Spiky_constant, dis, kernel);
 
-		// 					sortedAcc_d[index] -= Distance * Force_pressure / dis;
+							acc_d[index] -= Distance * Force_pressure / dis;
 
-		// 					m3Vector RelativeVel = sortedVel_d[j] - sortedVel_d[index];
-		// 					float Force_viscosity = Volume * mu * Visco(Spiky_constant, dis, kernel);
-		// 					sortedAcc_d[index] += RelativeVel * Force_viscosity;
-		// 				}
-		// 			}
-		// 		}
-		// 	}
-		// }
+							m3Vector RelativeVel = sortedVel_d[j] - sortedVel_d[index];
+							float Force_viscosity = Volume * mu * Visco(Spiky_constant, dis, kernel);
+							acc_d[index] += RelativeVel * Force_viscosity;
+						// }
+					}
+				}
+			}
+		}
 
-		// /// Sum of the forces that make up the fluid, Eq.8
+		/// Sum of the forces that make up the fluid, Eq.8
 
-		// sortedAcc_d[index] = sortedAcc_d[index] / sorted_dens_d[index];
+		acc_d[index] = acc_d[index] / dens_d[index];
 
-		sortedAcc_d[index] += Gravity;
+		acc_d[index] += Gravity;
 
-		Update_Properties(index, sortedPos_d, sortedVel_d, sortedAcc_d, World_Size, Time_Delta, m_numParticles, Wall_Hit);
+		Update_Properties(index, sortedPos_d, sortedVel_d, acc_d, World_Size, Time_Delta, m_numParticles, Wall_Hit);
 
 		uint originalIndex = m_dGridParticleIndex[index];
 
 		pos_d[originalIndex] = sortedPos_d[index];
 		vel_d[originalIndex] = sortedVel_d[index];
-		
-		acc_d[originalIndex] = sortedAcc_d[index];
-		mass_d[originalIndex] = sortedMass_d[index];
-		
-		dens_d[originalIndex] = sorted_dens_d[index];
-		pres_d[originalIndex] = sorted_pres_d[index];
 	}
 }
 
