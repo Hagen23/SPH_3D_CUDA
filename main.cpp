@@ -83,7 +83,6 @@ void init(void)
 	printf("GLSL version supported %s\n", glslVersion);
 
 	glClearColor(0.8f, 0.8f, 0.8f, 1.0f);
-	glShadeModel(GL_SMOOTH);
 	glEnable(GL_DEPTH_TEST);
 
 	solver = new Solver(NUM_PARTICLES);
@@ -125,7 +124,7 @@ void display(void)
 			glBegin(GL_POINTS);
 				glPointSize(10.0f);
 				glColor3f(0.2, 0.2, 0.8);
-				glVertex3f(positions[index].x-32, positions[index].y-32, positions[index].z-32);
+				glVertex3f(positions[index].x-H_GRID_SIZE, positions[index].y-H_GRID_SIZE, positions[index].z-H_GRID_SIZE);
 			glEnd();
 		glPopMatrix();
 	}

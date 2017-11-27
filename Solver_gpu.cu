@@ -38,7 +38,9 @@ extern "C"
 	void SetParameters(Parameters *p)
 	{
 		HandleError(cudaMemcpyToSymbol(para, p, sizeof(Parameters), 0, cudaMemcpyHostToDevice), "Failed to copy Symbol!");
-		getLastCudaError("SetParas execute failed!");
+		
+		// cudaDeviceSynchronize();
+		// getLastCudaError("SetParas execute failed!");
 	}
 
 	void CalHash(unsigned int* index, unsigned int* hash, float3* pos, unsigned int num_particles)
@@ -47,15 +49,18 @@ extern "C"
 		computeGridSize(num_particles, BLOCK_SIZE, numBlocks, numThreads);
 		
 		cudaCalHash <<<numBlocks, numThreads >>>(index, hash, pos, num_particles);
-
-		getLastCudaError("CalHash execute failed!");
+		
+		// cudaDeviceSynchronize();
+		// getLastCudaError("CalHash execute failed!");
 	}
 	void SortParticles(unsigned int *hash, unsigned int *index, unsigned int num_particles)
 	{
 		thrust::sort_by_key(thrust::device_ptr<unsigned int>(hash),
 			thrust::device_ptr<unsigned int>(hash + num_particles),
 			thrust::device_ptr<unsigned int>(index));
-		getLastCudaError("SortParticles execute failed!");
+		
+		// cudaDeviceSynchronize();
+		// getLastCudaError("SortParticles execute failed!");
 	}
 
 	void ReorderDataAndFindCellStart(unsigned int* cellstart,
@@ -77,8 +82,9 @@ extern "C"
 
 		cudaReorderDataAndFindCellStart <<<numBlocks, numThreads, memsize>>>(cellstart, cellend, spos,
 			svel, hash, index, pos, vel, num_particles);
-
-		getLastCudaError("ReorderDataAndFindCellStart execute failed!");
+		
+		// cudaDeviceSynchronize();
+		// getLastCudaError("ReorderDataAndFindCellStart execute failed!");
 	}
 
 	void CalcDensityPressure(float* dens, float* press, unsigned int* cellstart, unsigned int* cellend, float3 *spos, unsigned int num_particles)
@@ -88,7 +94,8 @@ extern "C"
 
 		cudaCalcDensityPressure<<<numBlocks, numThreads>>>(dens, press, cellstart, cellend, spos, num_particles);
 
-		getLastCudaError("CalcDensity execute failed!");
+		// cudaDeviceSynchronize();
+		// getLastCudaError("CalcDensity execute failed!");
 	}
 
 	void CalcForce(float3* force, float3* spos, float3* svel, float3* vel, float* press, 
@@ -99,7 +106,8 @@ extern "C"
 
 		cudaCalcForce <<<numBlocks, numThreads>>>(force, spos, svel, vel, press, dens, index, cellstart, cellend, num_particles);
 
-		getLastCudaError("CalcForce execute failed!");
+		// cudaDeviceSynchronize();
+		// getLastCudaError("CalcForce execute failed!");
 	}
 
 	void UpdateVelocityAndPosition(float3* pos, float3* vel, float3* force, unsigned int num_particles)
@@ -109,7 +117,8 @@ extern "C"
 
 		cudaUpdateVelocityAndPosition <<<numBlocks, numThreads >>>(pos, vel, force, num_particles);
 
-		getLastCudaError("UpdateVelocityAndPosition execute failed!");
+		// cudaDeviceSynchronize();
+		// getLastCudaError("UpdateVelocityAndPosition execute failed!");
 	}
 
 	void HandleBoundary(float3* pos, float3* vel, unsigned int num_particles)
@@ -119,6 +128,7 @@ extern "C"
 
 		cudaHandleBoundary <<<numBlocks, numThreads>>>(pos, vel, num_particles);
 
-		getLastCudaError("HandleBoundary execute failed!");
+		// cudaDeviceSynchronize();
+		// getLastCudaError("HandleBoundary execute failed!");
 	}
 }

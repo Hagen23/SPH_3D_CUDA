@@ -17,6 +17,7 @@ This class implements the SPH with CUDA.
 #include <cstdlib>
 
 #define GRID_SIZE 		64
+#define H_GRID_SIZE		32
 #define NUM_PARTICLES	16384
 #define BLOCK_SIZE		512
 
